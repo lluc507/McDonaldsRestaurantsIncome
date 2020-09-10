@@ -1,0 +1,161 @@
+---
+title: "McDonald's, Restaurants, and Income"
+author: "Leon Luc, lluc507@ucla.edu"
+output:
+  html_document:
+    fig_caption: yes
+    force_captions: yes
+    highlight: pygments
+    number_sections: yes
+    theme: cerulean
+csl: mee.csl
+---
+```{r, echo = FALSE, results = 'hide', message = FALSE, warning = FALSE}
+1.
+GroupEast <- read.csv("GroupEast.csv", stringsAsFactors = FALSE)
+dim(GroupEast)
+
+irsCAzip2013 <- read.csv("irsCAzip2013.csv", stringsAsFactors = FALSE)
+dim(irsCAzip2013)
+
+2.
+#A.
+names(GroupEast)
+GroupEast <- GroupEast[-c(3,7:9,16,30,33:34,36:39)]
+#B.
+GroupEast <- GroupEast[-which(is.na(GroupEast$Latitude)),]
+
+GroupEast <- GroupEast[order(GroupEast$Latitude),]
+rownames(GroupEast) <- 1:nrow(GroupEast)
+which(GroupEast$Latitude == 0)
+
+addresses <- paste(GroupEast$Street.Address[1:254], GroupEast$City[1:254], GroupEast$State[1:254], sep = ", ")
+head(addresses)
+
+library(ggmap)
+#locg <- geocode(addresses, output="latlona", messaging=FALSE, source="google")
+#save(locg, file="locg.Rda")
+load("locg.Rda")
+GroupEast$Longitude[1:254] <- locg$lon
+GroupEast$Latitude[1:254] <- locg$lat
+which(is.na(GroupEast$Latitude)) # Only "Pasta Bravo" didn't get geocoded
+#C.
+GroupEast[,c(9,12,13,15:27)][GroupEast[,c(9,12,13,15:27)] == " "] <- NA
+#D.
+GroupEast$NumRating <- gsub("/ 5", "", GroupEast$Ratings)
+GroupEast$NumRating <- as.numeric(GroupEast$NumRating)
+#E.
+names(GroupEast)[5] <- c("Zip")
+GroupEast <- GroupEast[,c(1:5,28:29,6:9,30,10:27)]
+
+3.
+#A.
+sort(table(GroupEast$Ratings))
+sort(table(GroupEast$NumRating, useNA = "always"))
+
+library(knitr)
+score <- data.frame(table(GroupEast$NumRating))
+names(score) <- c("Rating", "Frequency")
+#B.
+sort(table(GroupEast$Alcohol))
+table(GroupEast$Credit.Cards)
+table(GroupEast$Good.for.Kids)
+#C.
+apply(irsCAzip2013[,c("N1", "MARS1", "MARS2", "MARS4", "NUMDEP", "A00100")], 2, summary)
+IRS <- data.frame(apply(irsCAzip2013[,c("N1", "MARS1", "MARS2", "MARS4", "NUMDEP", "A00100")], 2, summary))
+
+4.
+#A.
+names(irsCAzip2013)[1] <- "Zip"
+#B.
+irsCAzip2013 <- irsCAzip2013[,c(1:5,8:9)]
+head(irsCAzip2013)
+#C.
+YelpIRS <- merge(GroupEast, irsCAzip2013, by = "Zip")
+dim(YelpIRS)
+head(YelpIRS)
+
+5.
+#A.
+library(XML)
+#McDonalds <- readHTMLTable("http://www.stat.ucla.edu/~vlew/datasets/mcdonaldsG.html", stringsAsFactors = FALSE)
+#McDonalds <- data.frame(McDonalds)
+#save(McDonalds, file = "McDonalds.Rda")
+load("McDonalds.Rda")
+class(McDonalds)
+dim(McDonalds)
+names(McDonalds) <- c("Store", "Address", "City", "State", "Zip", "Phone", "Longitude", "Latitude", "InWalmart", "Playplace")
+#B.
+CA_McD <- McDonalds[McDonalds$State == "CA",]
+CA_McD <- CA_McD[order(CA_McD$Zip),]
+
+count <- data.frame(tapply(CA_McD$Latitude, CA_McD$Zip,length)) # dplyr CA_McD %>% group_by(Zip) %>% count()
+count$Zip <- row.names(count)
+count <- count[-1,]
+names(count)[1] <- "NumOfMcDonalds"
+count[,1] <- as.character(count[,1])
+final <- merge(YelpIRS, count, by = "Zip")
+dim(final)
+
+6.
+library(ggplot2)
+g1 <- ggplot(final, aes(x=A00100, y= NumOfMcDonalds))
+g1 + geom_point(aes(color=NumOfMcDonalds)) + labs(title = "# of McDonald's in Zip Code vs. AGI", x = "Zip Code", y = "Adjusted Gross Income") + geom_smooth(method = "lm", color = "black", formula = y~x)
+
+#basic
+boxplot(final$A00100 ~ final$Credit.Cards, main = "Boxplot of Adjusted Gross Income over Credit Cards at Restaurants", col = "turquoise1", xlab = "Accepts Credit Cards", ylab = "A00100")
+
+7.
+final$propAGI <- round(final$A00100/max(final$A00100), 3)
+
+8.
+mod <- lm(final$A00100 ~ final$NUMDEP)
+cor(x = final$NUMDEP, y = final$A00100)
+mod$coefficients
+mean(mod$fitted.values)
+
+9.
+round(tapply(final$NumRating, final$Zip, mean, na.rm=TRUE), 2)
+
+rating <- data.frame(round(tapply(final$NumRating, final$Zip, mean, na.rm=TRUE), 2))
+set.seed(318)
+rating <- data.frame(rating[sample(nrow(rating),10),])
+names(rating) <- "Mean Rating"
+```
+
+
+# Results
+## Tables
+This first table comes from task 3A and it surprised me that the restaurants are mostly rated 5 stars. I always felt that people who submitted ratings on Yelp were very unsatisfied and more likely to take the time to give low ratings than those who were satisfied.
+```{r, echo = FALSE}
+kable(score)
+```
+     
+The next table below comes from task 3C and I chose to output this because I feel that it gives a sense of what the IRS data is. Not many people understand what the variables mean and so providing an overall summary of the data provides a basic understanding of the numbers.
+```{r, echo = FALSE}
+kable(IRS, align = "l", caption = "Table: A summary table of the IRS data.")
+```
+     
+This last table comes from task 9 and it shows the average ratings for the restaurants in each zip code. Only a sample of all of the zip codes are shown, but it is interesting to see the different scores across zip codes of California.
+```{r, echo = FALSE}
+kable(rating, align = "l", caption = "Table: This is a sample of the mean rating of restaurants per zip code.")
+```
+
+## Graphics
+The first graphic below is a ggplot and I wanted to see if there was a relationship between the amount of McDonald's in a zip code and the adjusted gross income of individuals from the area code. It turned out that there was not really a clear relationship.
+```{r irisDataPlot, echo = FALSE, fig.cap="Figure 1: Relationship between Number of McDonald's in a zip code and adjusted gross income of individuals in the zip code. The line represents the conditional mean."}
+ #ggplot
+library("ggplot2", lib.loc="~/R/win-library/3.2")
+g1 <- ggplot(final, aes(x=Zip, y= A00100))
+g1 + geom_point(aes(color=NumOfMcDonalds)) + labs(title = "# of McDonald's in Zip Code vs. AGI", x = "Zip Code", y = "Adjusted Gross Income") + geom_smooth(method = "lm", color = "black", formula = y~x)
+```
+
+The second graphic below is a box plot made using base R. This visual is something that I would expect since a person who uses a credit card typically has more money and so would likely use it at restaurants.
+```{r, echo = FALSE}
+#basic
+boxplot(final$A00100 ~ final$Credit.Cards, main = "Boxplot of Adjusted Gross Income over Credit Cards at Restaurants", col = "turquoise1", xlab = "Accepts Credit Cards", ylab = "A00100")
+```
+
+# Extras
+## Conclusion/Discussion/Application
+  Coming into this class, I was a little nervous because I thought that I was at a disadvantage by being a sophomore who had no prior exposure to R or upper-divison classes that may have used R. I became pleasantly surprised that I was able to keep up and stay on top of my work for the duration of the quarter. As a second year Statistics major, I foresee that I will be using R much more in the future as I tackle on the upper-division courses. I think Stats 20 has provided me the foundation to do well with R and hopefully I will not have any troubles when I do eventually take those classes. Going further ahead into the future, I may perhaps use R in my job and if I do, I will be glad that I learned what it was.
